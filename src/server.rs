@@ -8,8 +8,8 @@ use crate::store::Store;
 
 #[derive(Debug)]
 enum CommandError {
-    InvalidError(String),
-    NotRecognizedError(String)
+    InvalidCommand,
+    UnknownCommand
 }
 
 impl Error for CommandError {}
@@ -17,12 +17,8 @@ impl Error for CommandError {}
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
-            CommandError::InvalidError(err) => {
-                write!(f, "{}", err)
-            },
-             CommandError::NotRecognizedError(err) => {
-                write!(f, "{}", err)
-            }
+            CommandError::InvalidCommand => write!(f, "command invalid"),
+            CommandError::UnknownCommand => write!(f, "command unknown"),
         }
 
     }
@@ -36,27 +32,18 @@ enum Command {
 }
 
 impl Command {
-    fn parse(input: String) -> Result<Self, CommandError> {
+    fn parse(input: &str) -> Result<Self, CommandError> {
+        let input = input.trim();
         let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() < 2 {
-            return Err(CommandError::InvalidError("command invalid".to_string()))
+        if parts.is_empty() {
+            return Err(CommandError::InvalidCommand)
         }
-
         match parts[0] {
-            "GET" => {
-                Ok(Command::Get(parts[1].to_string()))
-            },
-            "SET" => {
-                if parts.len() < 3 {
-                    Err(CommandError::InvalidError("command invalid".to_string()))
-                } else {
-                    Ok(Command::Set(parts[1].to_string(), parts[2..].join(" ").to_string()))
-                }
-            },
-            "DEL" => {
-                Ok(Command::Del(parts[1].to_string()))
-            },
-            _ => Err(CommandError::NotRecognizedError("command not recognized".to_string()))
+            "GET" if parts.len() == 2 => Ok(Command::Get(parts[1].to_string())),
+            "SET" if parts.len() >= 3 => Ok(Command::Set(parts[1].to_string(), parts[2..].join(" ").to_string())),
+            "DEL" if parts.len() == 2 => Ok(Command::Del(parts[1].to_string())),
+            "GET" | "SET" | "DEL" => Err(CommandError::InvalidCommand),
+            _ => Err(CommandError::UnknownCommand)
         }
     }
 }
@@ -101,7 +88,7 @@ impl Server {
                 Ok(bytes_read) => {
                     // handle the data read from the client here
                     let input = String::from_utf8_lossy(&buf[..bytes_read]);
-                    let response = match Command::parse(input.to_string()) {
+                    let response = match Command::parse(&input) {
                         Ok(command) => {
                             match command {
                                 Command::Get(key) => {
@@ -160,7 +147,7 @@ mod tests {
     #[test]
     fn test_command_parse_get_success() {
         let input = "GET something".to_string();
-        if let Ok(parsed) = Command::parse(input.clone()) {
+        if let Ok(parsed) = Command::parse(&input) {
             assert!(matches!(parsed, Command::Get(ref k) if k == "something"));
         } else {
             panic!("expected parse to succeed on `{}`", input);
@@ -170,7 +157,7 @@ mod tests {
     #[test]
     fn test_command_parse_del_success() {
         let input = "DEL something".to_string();
-        if let Ok(parsed) = Command::parse(input.clone()) {
+        if let Ok(parsed) = Command::parse(&input) {
             assert!(matches!(parsed, Command::Del(ref k) if k == "something"));
         } else {
             panic!("expected parse to succeed on `{}`", input);
@@ -180,7 +167,7 @@ mod tests {
     #[test]
     fn test_command_parse_set_success() {
         let input = "SET something something else is wrong with the world".to_string();
-        if let Ok(parsed) = Command::parse(input.clone()) {
+        if let Ok(parsed) = Command::parse(&input) {
             assert!(matches!(parsed, Command::Set(ref k, ref v) if k == "something" && v == "something else is wrong with the world"));
         } else {
             panic!("expected parse to succeed on `{}`", input);
@@ -190,7 +177,7 @@ mod tests {
     #[test]
     fn test_command_parse_with_extra_whitespace() {
         let input = "SET    something    something world  nice".to_string();
-        if let Ok(parsed) = Command::parse(input.clone()) {
+        if let Ok(parsed) = Command::parse(&input) {
             assert!(matches!(parsed, Command::Set(ref k, ref v) if k == "something" && v == "something world nice"));
         } else {
             panic!("expected parse to succeed on `{}`", input);
@@ -200,8 +187,8 @@ mod tests {
     #[test]
     fn test_command_parse_empty_string_is_invalid() {
         let input = "".to_string();
-        if let Err(error) = Command::parse(input.clone()) {
-            assert!(matches!(error, CommandError::InvalidError(ref k) if k == "command invalid"))
+        if let Err(error) = Command::parse(&input) {
+            assert!(matches!(error, CommandError::InvalidCommand))
         } else {
             panic!("expected parse to fail on `{}`", input);
         }
@@ -211,8 +198,8 @@ mod tests {
     #[test]
     fn test_command_parse_unrecognized_command() {
         let input = "HEEHEE hee".to_string();
-        if let Err(error) = Command::parse(input.clone()) {
-            assert!(matches!(error, CommandError::NotRecognizedError(ref k) if k == "command not recognized"))
+        if let Err(error) = Command::parse(&input) {
+            assert!(matches!(error, CommandError::UnknownCommand))
         } else {
             panic!("expected parse to fail on `{}`", input);
         }
@@ -221,8 +208,8 @@ mod tests {
     #[test]
     fn test_command_parse_invalid_set_command() {
         let input = "SET invalid".to_string();
-        if let Err(error) = Command::parse(input.clone()) {
-            assert!(matches!(error, CommandError::InvalidError(ref k) if k == "command invalid"))
+        if let Err(error) = Command::parse(&input) {
+            assert!(matches!(error, CommandError::InvalidCommand))
         } else {
             panic!("expected parse to fail on `{}`", input);
         }
@@ -231,8 +218,8 @@ mod tests {
     #[test]
     fn test_command_parse_ensure_case_sensitive() {
         let input = "get hello".to_string();
-        if let Err(error) = Command::parse(input.clone()) {
-            assert!(matches!(error, CommandError::NotRecognizedError(ref k) if k == "command not recognized"))
+        if let Err(error) = Command::parse(&input) {
+            assert!(matches!(error, CommandError::UnknownCommand))
         } else {
             panic!("expected parse to fail on `{}`", input);
         }
