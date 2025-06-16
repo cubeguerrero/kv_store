@@ -1,5 +1,9 @@
+mod server;
 mod store;
+
+use server::Server;
 use store::Store;
+
 
 fn main() {
     let mut store = Store::new();
@@ -35,5 +39,13 @@ fn main() {
         println!("key: {}, val: {}", key2, got_val);
     } else {
         println!("key: {} not found", key2);
+    }
+
+    let server = Server::new(8000, store);
+    match server.start() {
+        Err(_) => {
+            eprintln!("Something went wrong");
+        },
+        _ => {  }
     }
 }
